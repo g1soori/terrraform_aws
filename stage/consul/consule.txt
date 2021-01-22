@@ -1,0 +1,169 @@
+## Start consul in dev mode
+nohup consul agent -dev -client=0.0.0.0 -bind 172.31.56.20 &
+
+## Start consul agent on client 
+consul agent -join <server ip> -bind <clientip> -data-dir /root/consul -hcl 'disable_remote_exec=false'
+
+## Remote execution
+- Run command on remote agent
+- enable remote exec first with >> -hcl 'disable_remote_exec=false
+consul exec-ping -c 1 google.com
+
+## Configuration directory
+- include config / parameters in a file without adding them in command line
+data-dir = "/root/consul"
+start_join = [""]
+bind-addr = ""
+
+- start agent with config
+consul agent -config-dir=/root/consul-config
+
+** you can have both config dir and command line opetion
+
+## Leave behaviour
+- Graceful exit
+    ctrl+c 
+    killall -s 2 consul
+- Force removal
+    killall -s 9 consul
+
+#### Server mode run in server - consul-server-config/consul.hcl
+data_dir = "/root/consul"
+bind_addr = "172.31.56.30"
+client_addr = "0.0.0.0"
+bootstrap_expect = 1
+node_name = "consule_server"
+ui_config = { enabled = true }
+server = true
+
+
+## Enable consul service in systemd
+cat /usr/lib/systemd/system/consul.service
+cd /etc/consul.d/
+cp /root/consul-config/consul.hcl .
+systemctl start consul
+journalctl  -u consul
+systemctl enable consul
+
+## Consul for service discovery
+- Registry is maintained about all the services. 
+- Includes service names and IP addrs
+
+## List the IP address of particular service
+dig @localhost -p 8600 messaging-service.service.consul
+- if you need port add "SRV"
+dig @localhost -p 8600 messaging-service.service.consul SRV
+
+## Register service
+cd /etc/consul.d
+[root@ip-172-31-55-30 consul.d]# cat web.json
+{
+        "service": {
+                "name": "web",
+                "port": 80
+        }
+}
+[root@ip-172-31-55-30 consul.d]#   
+
+## Discover the service using DNS or web ui
+dig @localhost -p 8600 web.service.consul
+
+## Monitoring a service
+- Script + interval - external app does health check
+- http + interval - make HTTP GET request
+- tcp + interval - make TCP connection attempt
+
+## Add monitoring script to service
+[root@ip-172-31-55-30 consul.d]# cat web.json
+{
+        "service": {
+                "name": "web",
+                "port": 80,
+                "check": {
+                        "args": ["curl", "127.0.0.1"],
+                        "interval": "10s"
+                }
+        }
+}
+[root@ip-172-31-55-30 consul.d]#            
+-- update the config with
+[root@ip-172-31-55-30 consul.d]# cat consul.hcl
+data_dir = "/opt/consul/config-dir"
+start_join = ["172.31.56.30"]
+bind_addr = "172.31.55.30"
+node_name = "consul-agent01"
+enable_local_script_checks = true
+[root@ip-172-31-55-30 consul.d]#
+
+## Add key value in client
+[root@ip-172-31-55-30 consul.d]# consul kv put  env prod
+Success! Data written to: env
+[root@ip-172-31-55-30 consul.d]# consul kv get  env
+prod
+[root@ip-172-31-55-30 consul.d]#
+
+## Watches 
+- watches for changes made to key-value pairs and trigger external handler
+[root@ip-172-31-55-30 consul.d]# consul kv put max_memory 512MB
+Success! Data written to: max_memory
+[root@ip-172-31-55-30 consul.d]# consul watch -type=key -key=max_memory
+{
+    "Key": "max_memory",
+    "CreateIndex": 638,
+    "ModifyIndex": 638,
+    "LockIndex": 0,
+    "Flags": 0,
+    "Value": "NTEyTUI=",
+    "Session": ""
+}
+[root@ip-172-31-55-30 consul.d]#
+
+- invoke script
+consul watch -type=key -key=max_memory ./script.sh
+
+- it can watch for
+key, keyprefix, services, nodes, checks, events
+
+- example check
+consul watch -type=checks -state=critical
+
+## Consul template
+[root@ip-172-31-56-30 template]# cat course.tpl
+{{ key "course"}}
+[root@ip-172-31-56-30 template]#
+[root@ip-172-31-56-30 template]# consul-template -template "course.tpl:c_name.txt"
+
+## envconsul
+Download package https://github.com/hashicorp/envconsul
+
+
+## Consul connect
+- provides service to service authorization and encryption using TLS
+
+## Intentions
+Defines access control for services via connect
+consule intention create source-service dest-service ##create intention
+- higher precedence (higher number) will evaluate and will not check others
+
+## Side car proxy
+- built in layer 4 proxy for testing and development
+- Envoy as side car proxy for first class 
+- Envoy has many feature like traffic splitting
+
+## ACL
+- enable authentication to web ui, api, cli, communication
+- Create configuration first in /etc/consul.d/agent.hcl
+acl = {
+  enabled = true
+  default_policy = "deny"
+  enable_token_persistence = true
+}
+- Create bootstrap token 
+# consul acl bootstrap
+- specify token for every command
+consul members -token df1a9b25-ed69-cc9a-c5ff-b106087aa50d
+- Specify as env variable
+export CONSUL_HTTP_TOKEN=3a2c3d17-a6db-03db-a89b-15419aab68b1
+- Tokens are associated with certain policy 
+- Policy decided which permission are allowed or denied
+- First create tocken, then create policy, then associate policy with token
