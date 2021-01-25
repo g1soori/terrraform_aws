@@ -1,4 +1,5 @@
 ## Start consul in dev mode
+- in memory mode, not secured 
 nohup consul agent -dev -client=0.0.0.0 -bind 172.31.56.20 &
 
 ## Start consul agent on client 
@@ -28,11 +29,11 @@ consul agent -config-dir=/root/consul-config
     killall -s 9 consul
 
 #### Server mode run in server - consul-server-config/consul.hcl
-data_dir = "/root/consul"
-bind_addr = "172.31.56.30"
-client_addr = "0.0.0.0"
-bootstrap_expect = 1
-node_name = "consule_server"
+data_dir = "/root/consul"               # where conole runtime data saves
+bind_addr = "172.31.56.30"              # address agent will listen 
+client_addr = "0.0.0.0"                 # 
+bootstrap_expect = 1                    # how many servers in data center 
+node_name = "consule_server"            # unique name of server in dc  
 ui_config = { enabled = true }
 server = true
 
@@ -64,6 +65,7 @@ cd /etc/consul.d
         }
 }
 [root@ip-172-31-55-30 consul.d]#   
+[root@ip-172-31-55-30 consul.d]#  consul services register web.json
 
 ## Discover the service using DNS or web ui
 dig @localhost -p 8600 web.service.consul
@@ -144,6 +146,8 @@ Download package https://github.com/hashicorp/envconsul
 Defines access control for services via connect
 consule intention create source-service dest-service ##create intention
 - higher precedence (higher number) will evaluate and will not check others
+        consul intention create web db 
+        consul intention check web db   
 
 ## Side car proxy
 - built in layer 4 proxy for testing and development
@@ -158,8 +162,20 @@ acl = {
   default_policy = "deny"
   enable_token_persistence = true
 }
-- Create bootstrap token 
+
+# Create bootstrap token 
 # consul acl bootstrap
+[root@ip-172-31-56-30 ~]# consul acl bootstrap
+AccessorID:       b09419ff-e757-09d9-16d0-075b95bb7aa9
+SecretID:         6f02da97-f8c5-81c8-75df-47def8ca7fb5
+Description:      Bootstrap Token (Global Management)
+Local:            false
+Create Time:      2021-01-22 23:53:51.775562571 +0000 UTC
+Policies:
+   00000000-0000-0000-0000-000000000001 - global-management
+
+[root@ip-172-31-56-30 ~]#
+
 - specify token for every command
 consul members -token df1a9b25-ed69-cc9a-c5ff-b106087aa50d
 - Specify as env variable
@@ -167,3 +183,297 @@ export CONSUL_HTTP_TOKEN=3a2c3d17-a6db-03db-a89b-15419aab68b1
 - Tokens are associated with certain policy 
 - Policy decided which permission are allowed or denied
 - First create tocken, then create policy, then associate policy with token
+
+# example policy
+key_prefix "mobiles/" {
+        policy = "write"
+}
+- Other actions include write, read, list, deny
+
+# Roles
+Grouping of set of policies into reusable high-level entity that can be applied to many tokens
+
+# Anonymous tokens
+- use when a request is made to consul without specifying bearer token. 
+- Description can be updated but cannot delete
+- Allows anonymous user to see basic config wihout login
+- If user not specifying a token, anonymous token will be applied
+- exmaple anonymous policy
+service_prefix "" {
+  policy = "read"
+  }
+key_prefix "" {
+  policy = "read"
+  }
+node_prefix "" {
+  policy = "read"
+  }
+- policy should be applied to default anonymous token
+
+## ACL for agents
+- Deny based approach deny access to agent activities as well
+- Create a new policy for agent and assign it new agent token
+node_prefix "" {
+  policy =  "write"
+  }
+service_prefix "" {
+  policy = "write"
+  }
+
+- Add the token to master server agent file
+[root@ip-172-31-56-30 ~]# cat /etc/consul.d/agent.hcl
+acl = {
+  enabled = true
+  default_policy = "deny"
+  enable_token_persistence = true
+  tokens {
+        "agent" = "4677edf5-c132-d3ca-7480-54dec75343f0"
+ }
+}
+[root@ip-172-31-56-30 ~]#     
+
+# Gossip protocol
+- Overcome challenges with multicast. where one or more agents may be down
+- process of peer to peer communication
+- overhead is not high.. because everyone forward the msg to next
+- by default gossip data in plain text
+- its important to enable encryption for gossip
+        - generate cryptographic key
+                [root@ip-172-31-56-30 ~]# consul keygen
+                +YmPSekG7RkXjR6ifWG+h1YHLE4kgIGoOGjgdpua0/E=
+                [root@ip-172-31-56-30 ~]#   
+        - add key within config file
+- Start server with key
+consul agent -dev -client=0.0.0.0 -bind 172.31.56.30 -node server -encrypt +YmPSekG7RkXjR6ifWG+h1YHLE4kgIGoOGjgdpua0/E=
+- Start agent with key
+- Enable the same from server mode in master
+[root@ip-172-31-55-30 ~]# cat /etc/consul.d/consul.hcl
+data_dir = "/opt/consul/config-dir"
+start_join = ["172.31.56.30"]
+bind_addr = "172.31.55.30"
+node_name = "consul-agent01"
+enable_local_script_checks = true
+encrypt = "+YmPSekG7RkXjR6ifWG+h1YHLE4kgIGoOGjgdpua0/E="
+[root@ip-172-31-55-30 ~]#
+- Both tcp and udp can be used for gossip. port is 8301
+
+# Enable gossip encryption in existing DC 
+- Needs to add key in both master and agents. this could lead to some downtime
+- additional configuration required in agent configuration file
+encrypt_verify_incoming = false  > 2 true
+encrypt_verify_outgoing = falise > 1 true
+
+# Rotating encyption keys
+- list avail keys
+[root@ip-172-31-56-30 ~]# consul keyring -list
+==> Gathering installed encryption keys...
+
+WAN:
+  +YmPSekG7RkXjR6ifWG+h1YHLE4kgIGoOGjgdpua0/E= [1/1]
+
+dc1 (LAN):
+  +YmPSekG7RkXjR6ifWG+h1YHLE4kgIGoOGjgdpua0/E= [2/2]
+[root@ip-172-31-56-30 ~]#
+
+- GEnerate new key
+[root@ip-172-31-56-30 ~]# consul keygen
+flGtng+thBlSq4tiRY3Tg22B/AIwXSV5PCzZOc2A1BA=
+[root@ip-172-31-56-30 ~]#
+
+- Add that key to keyring
+[root@ip-172-31-56-30 ~]# consul keyring -install flGtng+thBlSq4tiRY3Tg22B/AIwXSV5PCzZOc2A1BA=
+==> Installing new gossip encryption key...
+[root@ip-172-31-56-30 ~]#
+
+- Promote new key as primary
+[root@ip-172-31-56-30 ~]# consul keyring -use flGtng+thBlSq4tiRY3Tg22B/AIwXSV5PCzZOc2A1BA=
+==> Changing primary gossip encryption key...
+[root@ip-172-31-56-30 ~]#
+
+- remove old key
+[root@ip-172-31-56-30 ~]# consul keyring -remove +YmPSekG7RkXjR6ifWG+h1YHLE4kgIGoOGjgdpua0/E=
+==> Removing gossip encryption key...
+[root@ip-172-31-56-30 ~]#
+
+ ** above commands will not update config file.. encrypt parameter in config file only used during initial connection
+ removing that parameter after connection is no impact
+ ** agent persist whaterver data requires in local keyring
+
+ ## Asymmetric key encryption
+ - use public and private keys to encr and decr data
+ - Source will keep the private key and distribute public key
+ - Asymmetric enc use by these protocols - PGP, SSH, Bitcoin, TLS, S/MIME
+
+ ## TLS
+ - HTTPS is a extension of http
+ - Its encrypted with Transport layer protocol (TLS)
+ - Earlier version of tls called ssl
+ - Every website has a certificate issue by certificate authority
+ - Whenever open a website, website will send their certificate to the user
+
+ ## Consul and RPC
+ - RPC on port 8300
+ - Terminal commands on consul
+ - Setup RCA encryption
+        - Intialize built in CA certificate
+        # consul tls ca create
+        - create server certificate
+        # consul tls cert create -server
+        - Copy CA certificate to agent hosts
+        server# base64 -i consul-agent-ca.pem
+        client# cat /tmp/file | base64 -d > consul-agent-ca.pem
+        # Verify 
+        # tcpdump -i any port 8300 -vv -X 
+        # consul kv get sensitive
+- Configuration 
+        - encrypt_verify_incoming
+        - encrypt_verify_outgoing
+        - verify_server_hostname - ensure hostname in cert file matches server hostname
+
+## API 
+- use for interconnection between multiple software
+- The main interface to Consul is Restful HTTP API
+- Use v1
+- Sample API query
+        # curl http://127.0.0.1:8500/v1/kv/sensitive?pretty
+        # curl --request DELETE http://127.0.0.1:8500/v1/kv/sensitive
+- for ACL enabled servers use token
+        -- header "authorization: Bearer consul token"
+        or
+        --header "X-console-Token: <>"
+
+#### HA 
+## Split brain problem 
+- Agent become master while master still active. leads for data corruption in shared storage
+- Quorum - decides how many masters, and how many votes should be there to be a master node
+- Choose odd number equal or above 3 when creating cluster
+- "-bootstrap_expect" should be set to Quorum value
+
+# Consul datacenter
+- networking env within same region
+- Enable multi DC
+        - Configure the config file
+                datacenter = "India"
+        - Join to other DC 
+                consul members -wan
+                consul join -wan [SERVER-1-IP]
+                consul catalog datacenters
+
+# Prepared query
+- Assing specific app version
+- use as a failover policy 
+
+# Backup and restore
+- All servers writing to data directory
+- consul snapshot saves the point in time snapshot of state of the consul server 
+- includes key/values, service catalog, prepared queries, sessions, ACLs
+        # consul snapshot save backup.sa
+- restore backup
+        # consul snapshot restore backup.sa
+- snapshot will not be saved if dc is degraded or if no leader avail
+- possible to run on non leader server but very recent changes may not captured
+
+# Auto pilot pattern
+- automate repititive tasks like start/stop apps, scaling, recovery 
+- Use cae 1 - Dead servers     
+        - normally it takes 72 hours for dead servers to be auto reaped. 
+        - auto-pilot can quickly remove dead server as soon as replacement server added
+- Use case 2 - server stablization time
+        - once new server added to cluster, it takes sometime to become healthy and contribute to voting
+        - this time defined by serverstablization time in auto pilots. default it 10
+- list members of cluster and leader 
+# consul operator raft list-peers
+- Get auto-pilot settings
+# consul operator autopilot get-config
+# consul operator autopilot set-config -server-stablization-time=60s
+- Consul enterprise has these auto-pilot features
+        Redundancy zones
+        automated upgrades
+
+## Approaches for join servers 
+- Specify servers with -join 
+- specify list of servers with -retry-join
+        # consul agent -retry-join ip
+        useful when you know server will be eventually available
+- automated joining by tag for cloud envs
+        retry join accepts unified interface using the go-discover  
+        client query AWS for instance with consule-server tag. then AWS provides server 
+        # consul agent -retry-join "provider=AWS tag_key=name tag_value=consul-server" -data-dir /opt/consul -retry-interval 5s
+        Instance should provide IAM role with required permission policy 
+
+## Consul Logs
+- available loggin levels
+        Trace, debug, Info, Warn, Err
+# consul monitor -log-level=trace
+- debgu - monitor server for specific time and save logs to a archive
+
+## Reloadable config
+- These are the items supports config reload option # consult reload 
+        services, acl tokens, config entry bootstrap, checks, discard checks, 
+        http client address, log level, node metadata, watches
+
+### Consul enterprise
+- Install binary that supports consul enterprise
+- Check license
+# consul license get
+- Copy temp license and add it 
+# consul license put @consul.lic
+
+- Namespaces
+        provides separation for teams within single organization
+        create Namespaces
+                [root@ip-172-31-56-30 consul.d]# cat alice-team.hcl
+                name = "alice-team"
+                [root@ip-172-31-56-30 consul.d]# 
+                [root@ip-172-31-56-30 consul.d]# consul namespace write alice-team.hcl
+        DNS name. add namespace name as well 
+                <service-name>.service.<namespace>.<datacenter>.consul
+                # dig @localhost -p 8600 web-service.service.bob-team.dc1.consul SRV 
+
+- Consul snapshot agent        
+        Start service 
+                # consul snapshot agent
+        Check about backup 
+                # consul snapshot inspect consul-1611530528281402772.snap
+        Can save the snapshot to S3, blob, etc
+
+- Redundancy zones      
+        able to run one voter and any no of non voters in a defined availability zone
+        for redundancy purpose
+        if voter goes down of a specific zone, autopilot will promote non voter as voter
+        Add below entry in /etc/init.d/consul.hcl 
+                node_meta {
+                        zone = "zone1"
+                }
+        Ensure autopilot use zone tag 
+                [root@ip-172-31-56-30 consul.d]# consul operator autopilot get-config
+                CleanupDeadServers = true
+                LastContactThreshold = 200ms
+                MaxTrailingLogs = 250
+                MinQuorum = 0
+                ServerStabilizationTime = 10s
+                RedundancyZoneTag = ""
+                DisableUpgradeMigration = false
+                UpgradeVersionTag = ""
+                [root@ip-172-31-56-30 consul.d]#
+        # consul operator autopilot set-config -redundancy-zone-tag=zone
+        or 
+        autopilot {
+                redundancy_zone_tag = "zone"
+                }
+
+### Exam pointers
+- connections to consul - gui, cli, api
+- key value pairs      
+        max size 512KB
+        consul kv get-recurse --list all keys
+        returned value for kv from API is base64 encoded. add ?raw entry to get real value, ?keys will list all keys
+- prepared query
+        endpoint is >> service-name.query.consul
+- Ports 
+        8301 - lan gopssip comm between clients
+        8302 - wan gossip
+        8300 - RPC 
+- Certificate distribution methods
+        operator
+        auto encryption
