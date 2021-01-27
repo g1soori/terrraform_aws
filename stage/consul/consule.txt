@@ -180,6 +180,8 @@ Policies:
 consul members -token df1a9b25-ed69-cc9a-c5ff-b106087aa50d
 - Specify as env variable
 export CONSUL_HTTP_TOKEN=3a2c3d17-a6db-03db-a89b-15419aab68b1
+- specify file where token is stored
+consul member -token-file 
 - Tokens are associated with certain policy 
 - Policy decided which permission are allowed or denied
 - First create tocken, then create policy, then associate policy with token
@@ -341,6 +343,8 @@ flGtng+thBlSq4tiRY3Tg22B/AIwXSV5PCzZOc2A1BA=
         -- header "authorization: Bearer consul token"
         or
         --header "X-console-Token: <>"
+        or
+        ?token = query parameter << least secure
 
 #### HA 
 ## Split brain problem 
@@ -461,6 +465,8 @@ flGtng+thBlSq4tiRY3Tg22B/AIwXSV5PCzZOc2A1BA=
         autopilot {
                 redundancy_zone_tag = "zone"
                 }
+- enhanced read scalability
+- Sentinal
 
 ### Exam pointers
 - connections to consul - gui, cli, api
@@ -477,3 +483,20 @@ flGtng+thBlSq4tiRY3Tg22B/AIwXSV5PCzZOc2A1BA=
 - Certificate distribution methods
         operator
         auto encryption
+- Consul agent works on 
+        server mode 
+        client mode 
+- Intentions can be created from GUI, API, CLI
+- Two types of tokens created during bootstrap process 
+        master
+        anonymous
+- Two methods to generate certificates
+        operator
+        auto encrypt
+- benefits of LAN gossip
+        manage membership information
+        Distribute failure detection
+        reliable and fast broadcast
+- Benefits of non voting servers 
+        enhanced read scalability
+        fault tolerance
