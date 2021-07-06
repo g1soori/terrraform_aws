@@ -36,28 +36,36 @@ data "aws_ami" "ubuntu" {
   owners = ["099720109477"] # Canonical
 }
 
-resource "aws_network_interface" "web" {
-  count = var.server_count
+# resource "aws_network_interface" "web" {
+#   count = var.server_count
   
-  subnet_id    = data.terraform_remote_state.subnet.outputs.subnet_id["${var.environment}_subnet"]
+#   subnet_id    = data.terraform_remote_state.subnet.outputs.subnet_id["${var.environment}_subnet"]
   
-  tags = {
-    Name = "${var.environment}_${var.resource_prefix}-nic${format("%02d",count.index + 1)}"
-  }
-}
+#   tags = {
+#     Name = "${var.environment}_${var.resource_prefix}-nic${format("%02d",count.index + 1)}"
+#   }
+# }
 
 resource "aws_instance" "web" {
   count = var.server_count
 
   ami           = data.aws_ami.ubuntu.id
   instance_type = "t3.micro"
+  vpc_security_group_ids = ["sg-011522e198af22431"]
+  key_name = "ec2"
 
-  network_interface {
-    network_interface_id = aws_network_interface.web[count.index].id
-    device_index         = 0
-  }
+  # network_interface {
+  #   network_interface_id = aws_network_interface.web[count.index].id
+  #   device_index         = 0
+  # }
 
   tags = {
     Name = "${var.environment}_${var.resource_prefix}-vm${format("%02d",count.index + 1)}"
   }
+}
+
+resource "aws_eip" "lb" {
+  count = var.server_count
+  instance = aws_instance.web[count.index].id
+  vpc      = true
 }

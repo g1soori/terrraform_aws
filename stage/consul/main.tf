@@ -2,11 +2,14 @@
 # t3.micro node with an AWS Tag naming it "HelloWorld"
 
 terraform {
+  #required_version = "0.12.28"
+
   backend "s3" {
     bucket = "g1soori-tf-bucket"
     key    = "tf/dev/nomad.tfstate"
     region = "us-west-2"
   }
+
 }
 
 # data "terraform_remote_state" "subnet" {
@@ -52,7 +55,7 @@ resource "aws_instance" "nomad" {
   ami           = data.aws_ami.centos.id
   instance_type = "t3.micro"
   vpc_security_group_ids = ["sg-011522e198af22431"]
-  key_name = "nomad-ssh"
+  key_name = "nomad"
 
   # network_interface {
   #   network_interface_id = aws_network_interface.nomad[count.index].id
@@ -73,7 +76,7 @@ resource "aws_instance" "nomad" {
     connection {
       type     = "ssh"
       user     = "ec2-user"
-      private_key = file("C:\\Jeewan\\Projects\\cloud-training\\aws\\nomad\\nomad.pem")
+      private_key = file("../../../nomad.pem")
       host    = self.public_ip
     }
   }
