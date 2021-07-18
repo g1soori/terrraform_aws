@@ -15,7 +15,7 @@ website/node_modules
 *.backup
 ./*.tfstate
 .terraform/
-terraform.tfvars
+secrets.tfvars
 *.auto.tfvars
 *.log
 *.bak

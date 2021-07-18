@@ -4,7 +4,7 @@
 terraform {
   backend "s3" {
     bucket = "g1soori-tf-bucket"
-    key    = "tf/dev/ec2.tfstate"
+    key    = "tf/dev/ec2-ssm-parameter.tfstate"
     region = "us-west-2"
     profile = "g1"
   }
@@ -19,6 +19,21 @@ data "terraform_remote_state" "subnet" {
     access_key  = var.access_key
     secret_key  = var.secret_key
   }
+}
+
+data "terraform_remote_state" "ssm_parameter" {
+  backend = "s3"
+  config = {
+    bucket      = "g1soori-tf-bucket"
+    key         = "tf/dev/ssm-paramter.tfstate"
+    region      = var.region
+    access_key  = var.access_key
+    secret_key  = var.secret_key
+  }
+}
+
+data "aws_ssm_parameter" "secret" {
+  name = data.terraform_remote_state.ssm_parameter.outputs.name
 }
 
 data "aws_ami" "ubuntu" {
@@ -53,7 +68,6 @@ data "aws_ami" "amazon" {
   owners = ["137112412989"] # Canonical
 }
 
-
 resource "aws_instance" "web" {
   count = var.server_count
 
@@ -63,10 +77,12 @@ resource "aws_instance" "web" {
   key_name = "ec2-2021"
   subnet_id = data.terraform_remote_state.subnet.outputs.subnet_id["${var.environment}_subnet"]
 
-  # network_interface {
-  #   network_interface_id = aws_network_interface.web[count.index].id
-  #   device_index         = 0
-  # }
+  user_data = <<EOF
+  #!/bin/bash
+  touch /tmp/exectuted.txt
+  echo "${data.aws_ssm_parameter.secret.value}" > /tmp/password.txt
+
+  EOF
 
   iam_instance_profile = "ec2_profile"
 
@@ -79,19 +95,4 @@ resource "aws_eip" "lb" {
   count = var.server_count
   instance = aws_instance.web[count.index].id
   vpc      = true
-}
-
-resource "aws_instance" "private" {
-
-  ami           = data.aws_ami.amazon.id
-  instance_type = "t3.micro"
-  vpc_security_group_ids = ["sg-0b595ec561f0fb9cf"]
-  key_name = "ec2-2021"
-  subnet_id = data.terraform_remote_state.subnet.outputs.subnet_id["prod_subnet"]
-
-  iam_instance_profile = "ec2_profile"
-
-  tags = {
-    Name = "private_${var.resource_prefix}-vm"
-  }
 }
