@@ -80,18 +80,3 @@ resource "aws_eip" "lb" {
   instance = aws_instance.web[count.index].id
   vpc      = true
 }
-
-resource "aws_instance" "private" {
-
-  ami           = data.aws_ami.amazon.id
-  instance_type = "t3.micro"
-  vpc_security_group_ids = ["sg-0b595ec561f0fb9cf"]
-  key_name = "ec2-2021"
-  subnet_id = data.terraform_remote_state.subnet.outputs.subnet_id["prod_subnet"]
-
-  iam_instance_profile = "ec2_profile"
-
-  tags = {
-    Name = "private_${var.resource_prefix}-vm"
-  }
-}
