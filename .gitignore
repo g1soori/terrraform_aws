@@ -24,6 +24,7 @@ secrets.tfvars
 .idea
 *.iml
 *.test
+.terraform.lock.hcl
 
 website/vendor
 

@@ -40,6 +40,7 @@ resource "aws_route_table" "public-rt" {
   }
 }
 
+## Internet GW is attached to the dev_subnet
 resource "aws_route_table_association" "public-rta" {
   subnet_id      = aws_subnet.main["dev_subnet"].id
   route_table_id = aws_route_table.public-rt.id
@@ -49,6 +50,8 @@ resource "aws_route_table_association" "public-rta" {
 #   vpc      = true
 # }
 
+
+## Enable this 2 sets of block of code only if private subnet requires internet access
 # resource "aws_nat_gateway" "main" {
 #   connectivity_type = "public"
 #   subnet_id         = aws_subnet.main["dev_subnet"].id
